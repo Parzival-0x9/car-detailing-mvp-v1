@@ -44,15 +44,20 @@ export function handleBookingForm(form, onSaved){
 
 async function sendToSheet(entry){
   if(!SHEET_WEBHOOK_URL) return;
-  const payload={...entry, source:'website'};
-  const res=await fetch(SHEET_WEBHOOK_URL,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
+
+  // Use a "simple request" to avoid CORS preflight
+  const payload = { ...entry, source: 'website' };
+  await fetch(SHEET_WEBHOOK_URL, {
+    method: 'POST',
+    mode: 'no-cors',                         // <-- avoids preflight
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // simple header
     body: JSON.stringify(payload)
   });
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  return res.json();
+
+  // Note: in no-cors mode the browser won’t expose the response,
+  // but the row will be appended in your Google Sheet.
 }
+
 
 // === Employee ===
 export function renderJobs(tbody){
