@@ -44,7 +44,9 @@ export function handleBookingForm(form, onSaved){
 
 async function sendToSheet(entry){
   if(!SHEET_WEBHOOK_URL) return;
+
   const payload = { ...entry, source: 'website' };
+
   await fetch(SHEET_WEBHOOK_URL, {
     method: 'POST',
     mode: 'no-cors',
@@ -52,6 +54,7 @@ async function sendToSheet(entry){
     body: JSON.stringify(payload)
   });
 }
+
 
 
 
