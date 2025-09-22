@@ -4,13 +4,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jobs — ShinePro</title>
+  <title>Checklist — ShinePro</title>
   <link rel="stylesheet" href="styles.css" />
   <script type="module">
-    import { ensureSeedData, renderJobs } from './app.js';
+    import { ensureSeedData, renderChecklist, attachChecklist } from './app.js';
     window.addEventListener('DOMContentLoaded',()=>{
       ensureSeedData();
-      renderJobs(document.querySelector('tbody'));
+      const list=document.getElementById('list');
+      renderChecklist(list); attachChecklist(list);
     });
   </script>
 </head>
@@ -23,13 +24,10 @@
   </header>
 
   <main class="container">
-    <h2>Assigned Jobs</h2>
+    <h2>Saved Checklist</h2>
     <section class="box">
-      <table class="table">
-        <thead><tr><th>ID</th><th>Job</th><th>Address</th><th>Date</th><th>Assigned To</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <hr><small class="muted">Future: live sync & route planning.</small>
+      <ul id="list" style="list-style:none; padding:0; display:grid; gap:8px;"></ul>
+      <hr><small class="muted">Progress persists in this browser.</small>
     </section>
   </main>
 
