@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * Luxury Car Detailing – Single-File React App (Home Service Enabled)
- * -------------------------------------------------
- * ✅ Elegant, interactive, mobile-first
- * ✅ Services with live price calculator
- * ✅ Booking flow with availability & validation
- * ✅ LocalStorage persistence
- * ✅ Admin mini-dashboard (view, filter, export CSV, mark paid)
- * ✅ Print-friendly invoice/confirmation
- * ✅ Home Service: address, travel zones, travel fee
+ * Luxury Car Detailing – Home Service with LIVE Brisbane Suburbs (2025)
+ * --------------------------------------------------------------------
+ * - Suburb list auto-loads from Brisbane City Council Open Data (2024/25 dataset).
+ * - If the API is unreachable, we fall back to a small built-in list.
+ * - Travel fee: flat rate (configurable) for all Brisbane home-service bookings.
+ *
+ * Data source:
+ * Brisbane City Council — Suburbs and Adjoining Suburbs (Opendatasoft)
+ * API (v2.1): https://data.brisbane.qld.gov.au/api/explore/v2.1/catalog/datasets/suburbs-and-adjoining-suburbs/records
  */
 
 // ---- Config ---------------------------------------------------------------
@@ -21,30 +21,16 @@ const BRAND = {
   address: "11 Athena Ave, Brisbane QLD",
 };
 
-const ADMIN_PIN = "2468"; // ⚠️ Demo only. Replace with real auth later.
+const ADMIN_PIN = "2468"; // demo only
 
+// Flat travel fee for any Brisbane suburb (tune as needed)
+const TRAVEL_FEE_FLAT = 35;
+
+// Services & Add-ons
 const SERVICES = [
-  {
-    id: "express",
-    name: "Express Detail",
-    desc: "Exterior wash, quick interior spruce, tyre shine.",
-    durations: 60,
-    priceBySize: { small: 89, medium: 109, large: 129 },
-  },
-  {
-    id: "signature",
-    name: "Signature Detail",
-    desc: "Deep interior clean, foam wash, clay, machine polish (light).",
-    durations: 150,
-    priceBySize: { small: 249, medium: 289, large: 329 },
-  },
-  {
-    id: "ceramic",
-    name: "Ceramic Coat (3-yr)",
-    desc: "Paint prep, multi-stage polish, 3-year ceramic protection.",
-    durations: 300,
-    priceBySize: { small: 899, medium: 1099, large: 1299 },
-  },
+  { id: "express", name: "Express Detail", desc: "Exterior wash, quick interior spruce, tyre shine.", durations: 60, priceBySize: { small: 89, medium: 109, large: 129 } },
+  { id: "signature", name: "Signature Detail", desc: "Deep interior clean, foam wash, clay, light machine polish.", durations: 150, priceBySize: { small: 249, medium: 289, large: 329 } },
+  { id: "ceramic", name: "Ceramic Coat (3‑yr)", desc: "Paint prep, multi-stage polish, 3‑year ceramic protection.", durations: 300, priceBySize: { small: 899, medium: 1099, large: 1299 } },
 ];
 
 const ADDONS = [
@@ -54,46 +40,22 @@ const ADDONS = [
   { id: "interior", name: "Leather Clean & Protect", price: 70 },
 ];
 
-// Home service travel zones
-const MOBILE_ZONES = [
-  { id: "A", label: "Zone A – within ~20km", fee: 25 },
-  { id: "B", label: "Zone B – 20–35km", fee: 45 },
-  { id: "C", label: "Zone C – 35–50km", fee: 65 },
-];
-
-const SLOTS_PER_DAY = 6; // simplistic capacity model
-const OPENING_HOUR = 9; // 9AM
-const CLOSING_HOUR = 17; // 5PM
+const SLOTS_PER_DAY = 6;
+const OPENING_HOUR = 9;
+const CLOSING_HOUR = 17;
 
 // ---- Utilities ------------------------------------------------------------
 const currency = (n) => new Intl.NumberFormat(undefined, { style: "currency", currency: "AUD" }).format(n);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const toISODate = (d) => new Date(d).toISOString().slice(0, 10);
-
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
-
-function download(filename, text) {
-  const el = document.createElement("a");
-  el.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(text));
-  el.setAttribute("download", filename);
-  el.style.display = "none";
-  document.body.appendChild(el);
-  el.click();
-  document.body.removeChild(el);
-}
+const uniq = (arr) => Array.from(new Set(arr));
 
 // ---- Storage --------------------------------------------------------------
 const STORAGE_KEY = "olympus_bookings_v1";
 
 function useLocalBookings() {
   const [bookings, setBookings] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
   });
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings)), [bookings]);
   return [bookings, setBookings];
@@ -105,9 +67,7 @@ export default function App() {
   const [bookings, setBookings] = useLocalBookings();
   const [admin, setAdmin] = useState(false);
 
-  useEffect(() => {
-    document.title = `${BRAND.name} — Luxury Car Detailing`;
-  }, []);
+  useEffect(() => { document.title = `${BRAND.name} — Luxury Car Detailing`; }, []);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -116,9 +76,7 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 pb-24 pt-8">
         {route === "home" && <Home setRoute={setRoute} />}
         {route === "services" && <Services />}
-        {route === "book" && (
-          <BookingFlow bookings={bookings} setBookings={setBookings} />
-        )}
+        {route === "book" && <BookingFlow bookings={bookings} setBookings={setBookings} />}
         {route === "contact" && <Contact />}
         {route === "admin" && <AdminDashboard admin={admin} setAdmin={setAdmin} bookings={bookings} setBookings={setBookings} />}
       </main>
@@ -128,28 +86,17 @@ export default function App() {
 }
 
 // ---- UI Primitives --------------------------------------------------------
+function classNames(...xs) { return xs.filter(Boolean).join(" "); }
+
 function Card({ children, className }) {
-  return (
-    <div className={classNames("rounded-2xl bg-neutral-900/60 border border-neutral-800 shadow-2xl backdrop-blur p-6", className)}>
-      {children}
-    </div>
-  );
+  return <div className={classNames("rounded-2xl bg-neutral-900/60 border border-neutral-800 shadow-2xl backdrop-blur p-6", className)}>{children}</div>;
 }
 
 function Button({ children, onClick, type = "button", className, disabled }) {
   return (
-    <button
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
-      className={classNames(
-        "px-5 py-3 rounded-2xl font-medium transition-all disabled:opacity-50",
-        "bg-amber-500/90 hover:bg-amber-400 text-neutral-900 shadow-lg hover:shadow-xl",
-        className
-      )}
-    >
-      {children}
-    </button>
+    <button type={type} disabled={disabled} onClick={onClick}
+      className={classNames("px-5 py-3 rounded-2xl font-medium transition-all disabled:opacity-50",
+      "bg-amber-500/90 hover:bg-amber-400 text-neutral-900 shadow-lg hover:shadow-xl", className)}>{children}</button>
   );
 }
 
@@ -165,110 +112,52 @@ function SectionTitle({ eyebrow, title, subtitle }) {
 
 function NoiseBg() {
   return (
-    <div
-      aria-hidden
-      className="pointer-events-none fixed inset-0 -z-10"
-      style={{
-        background:
-          "radial-gradient(1500px 600px at 10% -10%, rgba(251,191,36,0.08), transparent)," +
-          "radial-gradient(1200px 500px at 90% -10%, rgba(251,191,36,0.05), transparent)," +
-          "linear-gradient(180deg, rgba(0,0,0,0.7), rgba(0,0,0,0.9))",
-        maskImage: "linear-gradient(0deg, black 60%, transparent)",
-      }}
-    />
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10"
+      style={{ background:
+        "radial-gradient(1500px 600px at 10% -10%, rgba(251,191,36,0.08), transparent)," +
+        "radial-gradient(1200px 500px at 90% -10%, rgba(251,191,36,0.05), transparent)," +
+        "linear-gradient(180deg, rgba(0,0,0,0.7), rgba(0,0,0,0.9))",
+        maskImage: "linear-gradient(0deg, black 60%, transparent)" }} />
   );
 }
 
 function Nav({ route, setRoute, admin, setAdmin }) {
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
-
-  const enterAdmin = () => {
-    if (pin === ADMIN_PIN) {
-      setAdmin(true);
-      setRoute("admin");
-      setPin("");
-      setOpen(false);
-    } else alert("Incorrect PIN");
-  };
-
+  const enterAdmin = () => { if (pin === ADMIN_PIN) { setAdmin(true); setRoute("admin"); setPin(""); setOpen(false);} else alert("Incorrect PIN"); };
   return (
     <header className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/70 border-b border-neutral-900">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow" />
-          <div>
-            <div className="font-semibold tracking-tight">{BRAND.name}</div>
-            <div className="text-xs text-neutral-400 -mt-0.5">{BRAND.tagline}</div>
-          </div>
+          <div><div className="font-semibold tracking-tight">{BRAND.name}</div><div className="text-xs text-neutral-400 -mt-0.5">{BRAND.tagline}</div></div>
         </div>
         <nav className="hidden md:flex items-center gap-3">
-          {[
-            ["home", "Home"],
-            ["services", "Services"],
-            ["book", "Book"],
-            ["contact", "Contact"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setRoute(key)}
-              className={classNames(
-                "px-4 py-2 rounded-xl text-sm",
-                route === key ? "bg-neutral-800 text-amber-300" : "hover:bg-neutral-900"
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          { [["home","Home"],["services","Services"],["book","Book"],["contact","Contact"]].map(([k,l]) =>
+            <button key={k} onClick={()=>setRoute(k)} className={classNames("px-4 py-2 rounded-xl text-sm", route===k?"bg-neutral-800 text-amber-300":"hover:bg-neutral-900")}>{l}</button>
+          )}
           <div className="w-px h-6 bg-neutral-800 mx-2" />
           {admin ? (
             <button onClick={() => setRoute("admin")} className="px-4 py-2 rounded-xl text-sm bg-amber-500/20 text-amber-300 hover:bg-amber-500/30">Admin</button>
           ) : (
             <div className="flex items-center gap-2">
-              <input
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="Admin PIN"
-                className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:ring focus:ring-amber-500/30"
-              />
+              <input value={pin} onChange={(e)=>setPin(e.target.value)} placeholder="Admin PIN"
+                className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:ring focus:ring-amber-500/30" />
               <Button onClick={enterAdmin} className="text-sm py-2">Enter</Button>
             </div>
           )}
         </nav>
-        <button className="md:hidden p-2" onClick={() => setOpen(!open)} aria-label="Menu">
-          <div className="i i-menu" />
-        </button>
+        <button className="md:hidden p-2" onClick={()=>setOpen(!open)} aria-label="Menu"><div className="i i-menu" /></button>
       </div>
       {open && (
         <div className="md:hidden px-4 pb-4 space-y-2 border-t border-neutral-900">
-          {[
-            ["home", "Home"],
-            ["services", "Services"],
-            ["book", "Book"],
-            ["contact", "Contact"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => {
-                setRoute(key);
-                setOpen(false);
-              }}
-              className={classNames(
-                "w-full text-left px-3 py-2 rounded-xl",
-                route === key ? "bg-neutral-800 text-amber-300" : "hover:bg-neutral-900"
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          { [["home","Home"],["services","Services"],["book","Book"],["contact","Contact"]].map(([k,l]) =>
+            <button key={k} onClick={()=>{setRoute(k);setOpen(false);}} className={classNames("w-full text-left px-3 py-2 rounded-xl", route===k?"bg-neutral-800 text-amber-300":"hover:bg-neutral-900")}>{l}</button>
+          )}
           {!admin && (
             <div className="flex items-center gap-2 pt-2">
-              <input
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="Admin PIN"
-                className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm w-full focus:outline-none focus:ring focus:ring-amber-500/30"
-              />
+              <input value={pin} onChange={(e)=>setPin(e.target.value)} placeholder="Admin PIN"
+                className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm w-full focus:outline-none focus:ring focus:ring-amber-500/30" />
               <Button onClick={enterAdmin} className="text-sm py-2">Enter</Button>
             </div>
           )}
@@ -284,34 +173,24 @@ function Home({ setRoute }) {
       <div className="space-y-6">
         <div>
           <div className="text-sm uppercase tracking-[0.25em] text-amber-400/80">Premium • Boutique • Mobile</div>
-          <h1 className="text-4xl md:text-5xl font-semibold leading-tight mt-3">
-            Elevate your car’s finish with
-            <span className="text-amber-400"> impeccable care</span>.
-          </h1>
-          <p className="text-neutral-400 mt-4 max-w-prose">
-            We bring a concierge detailing experience to your driveway or our studio. Book in minutes; arrive to that new-car glow.
-          </p>
+          <h1 className="text-4xl md:text-5xl font-semibold leading-tight mt-3">Elevate your car’s finish with<span className="text-amber-400"> impeccable care</span>.</h1>
+          <p className="text-neutral-400 mt-4 max-w-prose">We bring a concierge detailing experience to your driveway or our studio. Book in minutes; arrive to that new-car glow.</p>
         </div>
         <div className="flex gap-3">
-          <Button onClick={() => setRoute("book")} className="">Book Now</Button>
+          <Button onClick={() => setRoute("book")}>Book Now</Button>
           <button onClick={() => setRoute("services")} className="px-5 py-3 rounded-2xl font-medium border border-neutral-800 hover:bg-neutral-900">Explore Services</button>
         </div>
         <div className="grid grid-cols-3 gap-3 text-center">
           {["Concierge Pickup", "Paint-Safe", "Satisfaction"].map((k) => (
-            <Card key={k} className="py-5">
-              <div className="text-amber-300 text-sm">{k}</div>
-              <div className="text-xs text-neutral-400">Guaranteed</div>
-            </Card>
+            <Card key={k} className="py-5"><div className="text-amber-300 text-sm">{k}</div><div className="text-xs text-neutral-400">Guaranteed</div></Card>
           ))}
         </div>
       </div>
       <div className="relative">
         <div className="aspect-[4/3] rounded-3xl bg-gradient-to-br from-neutral-800 to-neutral-900 border border-neutral-800 shadow-2xl overflow-hidden">
-          <div className="absolute inset-0" style={{
-            background:
-              "radial-gradient(400px 200px at 20% 30%, rgba(251,191,36,0.25), transparent)," +
-              "radial-gradient(500px 300px at 80% 70%, rgba(251,191,36,0.15), transparent)"
-          }} />
+          <div className="absolute inset-0" style={{background:
+            "radial-gradient(400px 200px at 20% 30%, rgba(251,191,36,0.25), transparent)," +
+            "radial-gradient(500px 300px at 80% 70%, rgba(251,191,36,0.15), transparent)"}} />
           <div className="absolute bottom-6 left-6 right-6">
             <Card className="bg-neutral-950/50 border-neutral-800">
               <div className="text-sm text-neutral-300">Next available: <span className="text-amber-300">Tomorrow</span></div>
@@ -345,52 +224,67 @@ function Services() {
           </Card>
         ))}
       </div>
-      <Card>
-        <div className="text-sm font-medium mb-2 text-amber-100">Enhancements</div>
-        <div className="grid md:grid-cols-4 gap-3">
-          {ADDONS.map((a) => (
-            <div key={a.id} className="rounded-xl bg-neutral-950/40 border border-neutral-800 p-4">
-              <div className="font-medium">{a.name}</div>
-              <div className="text-neutral-400 text-sm">{currency(a.price)}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
     </section>
   );
 }
 
+// ---- Suburb loader --------------------------------------------------------
+const BCC_ENDPOINT = "https://data.brisbane.qld.gov.au/api/explore/v2.1/catalog/datasets/suburbs-and-adjoining-suburbs/records?limit=1000&select=distinct%20SUBURB_NAME&order_by=SUBURB_NAME";
+
+const FALLBACK_SUBURBS = [
+  // tiny fallback set; real list comes from API
+  { name: "Brisbane City", postcode: "4000" },
+  { name: "Fortitude Valley", postcode: "4006" },
+  { name: "New Farm", postcode: "4005" },
+  { name: "Kangaroo Point", postcode: "4169" },
+  { name: "West End", postcode: "4101" },
+  { name: "Toowong", postcode: "4066" },
+  { name: "Chermside", postcode: "4032" },
+];
+
+function useBrisbaneSuburbs() {
+  const [subs, setSubs] = useState(FALLBACK_SUBURBS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(BCC_ENDPOINT);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        const names = uniq((data?.results || []).map(r => (r.SUBURB_NAME || "").trim()).filter(Boolean));
+        // We don't get postcodes in this dataset; leave blank (optional) or map from your own table later.
+        const items = names.map(n => ({ name: n, postcode: "" }));
+        if (items.length > 0) setSubs(items);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  return { suburbs: subs, loading, error };
+}
+
+// ---- Booking Flow ---------------------------------------------------------
 function BookingFlow({ bookings, setBookings }) {
+  const { suburbs, loading: loadingSubs } = useBrisbaneSuburbs();
+
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    customer: "",
-    email: "",
-    phone: "",
-    vehicle: "",
-    size: "medium",
-    serviceId: SERVICES[1].id,
-    addons: [],
-    // Location
-    locationType: "studio", // "studio" | "mobile"
-    mobileZone: "A",
-    street: "",
-    suburb: "",
-    postcode: "",
-    // Schedule
-    date: todayISO(),
-    time: "09:00",
-    notes: "",
-    paid: false,
+    customer: "", email: "", phone: "",
+    vehicle: "", size: "medium", serviceId: SERVICES[1].id, addons: [],
+    locationType: "studio", suburb: "", postcode: "", street: "",
+    date: todayISO(), time: "09:00", notes: "", paid: false,
   });
 
-  const selectedService = useMemo(
-    () => SERVICES.find((s) => s.id === form.serviceId),
-    [form.serviceId]
-  );
-
+  const selectedService = useMemo(() => SERVICES.find((s) => s.id === form.serviceId), [form.serviceId]);
   const basePrice = selectedService?.priceBySize?.[form.size] ?? 0;
   const addonsTotal = form.addons.map((id) => ADDONS.find((a) => a.id === id)?.price || 0).reduce((a, b) => a + b, 0);
-  const travelFee = form.locationType === "mobile" ? (MOBILE_ZONES.find(z => z.id === form.mobileZone)?.fee || 0) : 0;
+  const travelFee = form.locationType === "mobile" ? TRAVEL_FEE_FLAT : 0;
   const total = basePrice + addonsTotal + travelFee;
 
   const dayBookings = bookings.filter((b) => b.date === form.date);
@@ -398,27 +292,20 @@ function BookingFlow({ bookings, setBookings }) {
 
   const timeOptions = useMemo(() => {
     const opts = [];
-    for (let h = OPENING_HOUR; h < CLOSING_HOUR; h++) {
-      ["00", "30"].forEach((m) => {
-        const t = `${String(h).padStart(2, "0")}:${m}`;
-        opts.push(t);
-      });
-    }
+    for (let h = OPENING_HOUR; h < CLOSING_HOUR; h++) ["00","30"].forEach((m) => opts.push(`${String(h).padStart(2,"0")}:${m}`));
     return opts;
   }, []);
 
   const capacityReached = dayBookings.length >= SLOTS_PER_DAY;
+  const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleAddon = (id) => setForm((f) => ({ ...f, addons: f.addons.includes(id) ? f.addons.filter((x) => x !== id) : [...f.addons, id] }));
 
-  function update(k, v) {
-    setForm((f) => ({ ...f, [k]: v }));
-  }
-
-  function toggleAddon(id) {
-    setForm((f) => ({
-      ...f,
-      addons: f.addons.includes(id) ? f.addons.filter((x) => x !== id) : [...f.addons, id],
-    }));
-  }
+  useEffect(() => {
+    // If a fallback suburb has a postcode, auto-fill; the live API doesn't provide postcodes
+    const s = FALLBACK_SUBURBS.find(s => s.name === form.suburb);
+    if (s && s.postcode && !form.postcode) update("postcode", s.postcode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.suburb]);
 
   function validate() {
     const errs = [];
@@ -426,13 +313,10 @@ function BookingFlow({ bookings, setBookings }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) errs.push("A valid email is required.");
     if (!/^[- +()0-9]{8,}$/.test(form.phone)) errs.push("A valid phone number is required.");
     if (!form.vehicle.trim()) errs.push("Vehicle make/model is required.");
-
     if (form.locationType === "mobile") {
+      if (!form.suburb) errs.push("Please select a Brisbane suburb.");
       if (!form.street.trim()) errs.push("Street address is required for home service.");
-      if (!form.suburb.trim()) errs.push("Suburb is required for home service.");
-      if (!/^\d{4}$/.test(form.postcode)) errs.push("A 4-digit postcode is required for home service.");
     }
-
     if (capacityReached) errs.push("No availability on this day. Please pick another date.");
     if (takenTimes.has(form.time)) errs.push("Selected time is already booked.");
     return errs;
@@ -441,14 +325,9 @@ function BookingFlow({ bookings, setBookings }) {
   function submit() {
     const errs = validate();
     if (errs.length) return alert(errs.join("\n"));
-
-    const booking = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...form, total, travelFee };
+    const booking = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...form, travelFee, total };
     setBookings((xs) => [...xs, booking]);
     setStep(3);
-  }
-
-  function printConfirm() {
-    window.print();
   }
 
   return (
@@ -457,11 +336,10 @@ function BookingFlow({ bookings, setBookings }) {
 
       {/* Stepper */}
       <div className="flex items-center gap-3 text-sm">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className={classNames("flex items-center gap-2", i !== 3 && "flex-1") }>
-            <div className={classNames("h-8 w-8 rounded-full grid place-items-center border",
-              step >= i ? "bg-amber-500 text-neutral-900 border-transparent" : "border-neutral-800")}>{i}</div>
-            {i !== 3 && <div className={classNames("h-[2px] flex-1", step > i ? "bg-amber-500" : "bg-neutral-800")} />}
+        {[1,2,3].map((i) => (
+          <div key={i} className={classNames("flex items-center gap-2", i!==3 && "flex-1") }>
+            <div className={classNames("h-8 w-8 rounded-full grid place-items-center border", (step>=i) ? "bg-amber-500 text-neutral-900 border-transparent" : "border-neutral-800")}>{i}</div>
+            {i!==3 && <div className={classNames("h-[2px] flex-1", step>i ? "bg-amber-500" : "bg-neutral-800")} />}
           </div>
         ))}
       </div>
@@ -469,13 +347,13 @@ function BookingFlow({ bookings, setBookings }) {
       {step === 1 && (
         <Card className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
+            {/* Services */}
             <div>
               <div className="text-sm font-medium mb-2 text-amber-100">Choose Service</div>
               <div className="space-y-2">
                 {SERVICES.map((s) => (
                   <label key={s.id} className={classNames("block p-4 rounded-xl border cursor-pointer",
-                    form.serviceId === s.id ? "border-amber-500 bg-amber-500/10" : "border-neutral-800 hover:bg-neutral-900")}
-                  >
+                    form.serviceId===s.id ? "border-amber-500 bg-amber-500/10" : "border-neutral-800 hover:bg-neutral-900")}>
                     <input type="radio" name="service" className="hidden" checked={form.serviceId===s.id} onChange={() => update("serviceId", s.id)} />
                     <div className="flex items-center justify-between gap-4">
                       <div>
@@ -491,6 +369,8 @@ function BookingFlow({ bookings, setBookings }) {
                 ))}
               </div>
             </div>
+
+            {/* Vehicle & addons */}
             <div>
               <div className="text-sm font-medium mb-2 text-amber-100">Vehicle & Add-ons</div>
               <div className="grid gap-3">
@@ -518,26 +398,20 @@ function BookingFlow({ bookings, setBookings }) {
             <div>
               <div className="text-sm font-medium mb-2 text-amber-100">Service location</div>
               <div className="flex gap-3">
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="loc" checked={form.locationType==="studio"} onChange={()=>update("locationType","studio")} />
-                  Studio (at our place)
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="loc" checked={form.locationType==="mobile"} onChange={()=>update("locationType","mobile")} />
-                  Home service (we come to you)
-                </label>
+                <label className="flex items-center gap-2"><input type="radio" name="loc" checked={form.locationType==="studio"} onChange={()=>update("locationType","studio")} />Studio (at our place)</label>
+                <label className="flex items-center gap-2"><input type="radio" name="loc" checked={form.locationType==="mobile"} onChange={()=>update("locationType","mobile")} />Home service (Brisbane suburbs only)</label>
               </div>
               {form.locationType === "mobile" && (
                 <div className="mt-3 p-4 rounded-xl bg-neutral-900 border border-neutral-800 grid gap-3">
-                  <select value={form.mobileZone} onChange={(e)=>update("mobileZone", e.target.value)} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3">
-                    {MOBILE_ZONES.map(z=> <option key={z.id} value={z.id}>{z.label} (+{currency(z.fee)})</option>)}
+                  <select value={form.suburb} onChange={(e)=>update("suburb", e.target.value)} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3">
+                    <option value="">{loadingSubs ? "Loading suburbs…" : "Select suburb…"}</option>
+                    {suburbs.map(s => <option key={s.name} value={s.name}>{s.name}{s.postcode?` (${s.postcode})`:""}</option>)}
                   </select>
                   <input value={form.street} onChange={(e)=>update("street", e.target.value)} placeholder="Street address" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <input value={form.suburb} onChange={(e)=>update("suburb", e.target.value)} placeholder="Suburb" className="col-span-2 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
-                    <input value={form.postcode} onChange={(e)=>update("postcode", e.target.value)} placeholder="Postcode" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={form.postcode} onChange={(e)=>update("postcode", e.target.value)} placeholder="Postcode (optional)" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
+                    <div className="flex items-center text-xs text-neutral-400 px-2">Flat travel fee {currency(TRAVEL_FEE_FLAT)} for all Brisbane suburbs.</div>
                   </div>
-                  <div className="text-xs text-neutral-400">Zones are rough travel distances. For areas beyond Zone C (~50km), contact us for a custom quote.</div>
                 </div>
               )}
             </div>
@@ -548,9 +422,7 @@ function BookingFlow({ bookings, setBookings }) {
             <div className="text-xl font-semibold text-amber-300">{currency(total)}</div>
           </div>
 
-          <div className="flex justify-end">
-            <Button onClick={()=>setStep(2)}>Continue</Button>
-          </div>
+          <div className="flex justify-end"><Button onClick={()=>setStep(2)}>Continue</Button></div>
         </Card>
       )}
 
@@ -573,9 +445,7 @@ function BookingFlow({ bookings, setBookings }) {
                 <select value={form.time} onChange={(e)=>update("time", e.target.value)} className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3">
                   {capacityReached && <option>— No availability —</option>}
                   {!capacityReached && timeOptions.map((t) => (
-                    <option key={t} value={t} disabled={takenTimes.has(t)}>
-                      {t} {takenTimes.has(t) ? "(Booked)" : ""}
-                    </option>
+                    <option key={t} value={t} disabled={takenTimes.has(t)}>{t} {takenTimes.has(t) ? "(Booked)" : ""}</option>
                   ))}
                 </select>
               </div>
@@ -611,7 +481,7 @@ function BookingFlow({ bookings, setBookings }) {
                 <li>Payment on completion: card, cash, or bank transfer.</li>
               </ul>
               <div className="mt-4 flex gap-3">
-                <Button onClick={printConfirm} className="">Print / Save PDF</Button>
+                <Button onClick={()=>window.print()}>Print / Save PDF</Button>
               </div>
             </Card>
           </div>
@@ -634,21 +504,11 @@ function SummaryCard({ form, total, travelFee }) {
         <div className="text-neutral-400">Vehicle</div><div>{form.vehicle}</div>
         <div className="text-neutral-400">Size</div><div className="uppercase">{form.size}</div>
         <div className="text-neutral-400">Location</div>
-        <div>
-          {form.locationType === "studio"
-            ? "Studio"
-            : `Home service • ${MOBILE_ZONES.find((z) => z.id === form.mobileZone)?.label}`}
-        </div>
-        {form.locationType === "mobile" && (
-          <>
-            <div className="text-neutral-400">Address</div>
-            <div>{form.street}, {form.suburb} {form.postcode}</div>
-          </>
-        )}
+        <div>{form.locationType === "studio" ? "Studio" : `Home service • ${form.suburb}${form.postcode?` ${form.postcode}`:""}`}</div>
+        {form.locationType === "mobile" && (<><div className="text-neutral-400">Address</div><div>{form.street}</div></>)}
         <div className="text-neutral-400">Date</div><div>{toISODate(form.date)}</div>
         <div className="text-neutral-400">Time</div><div>{form.time}</div>
-        <div className="text-neutral-400">Enhancements</div>
-        <div>{form.addons.length ? form.addons.map((id) => ADDONS.find((a) => a.id === id)?.name).join(", ") : "None"}</div>
+        <div className="text-neutral-400">Enhancements</div><div>{form.addons.length ? form.addons.map((id) => ADDONS.find((a) => a.id === id)?.name).join(", ") : "None"}</div>
       </div>
       <div className="mt-4 grid gap-2">
         {form.locationType === "mobile" && (
@@ -671,30 +531,10 @@ function Contact() {
     <section className="space-y-6">
       <SectionTitle eyebrow="Contact" title="We’re here to help" subtitle="Reach out for custom packages, fleets, or studio bookings." />
       <div className="grid md:grid-cols-3 gap-4">
-        <Card>
-          <div className="text-sm text-neutral-400">Phone</div>
-          <div className="font-medium">{BRAND.phone}</div>
-        </Card>
-        <Card>
-          <div className="text-sm text-neutral-400">Email</div>
-          <div className="font-medium">{BRAND.email}</div>
-        </Card>
-        <Card>
-          <div className="text-sm text-neutral-400">Address</div>
-          <div className="font-medium">{BRAND.address}</div>
-        </Card>
+        <Card><div className="text-sm text-neutral-400">Phone</div><div className="font-medium">{BRAND.phone}</div></Card>
+        <Card><div className="text-sm text-neutral-400">Email</div><div className="font-medium">{BRAND.email}</div></Card>
+        <Card><div className="text-sm text-neutral-400">Address</div><div className="font-medium">{BRAND.address}</div></Card>
       </div>
-      <Card>
-        <div className="text-sm font-medium text-amber-100 mb-2">Message us</div>
-        <form className="grid md:grid-cols-2 gap-3">
-          <input placeholder="Your name" className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3" />
-          <input placeholder="Email" className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3" />
-          <textarea placeholder="How can we help?" className="md:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 min-h-[120px]" />
-          <div className="md:col-span-2 flex justify-end">
-            <Button>Send (demo)</Button>
-          </div>
-        </form>
-      </Card>
     </section>
   );
 }
@@ -707,44 +547,35 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
     const now = new Date();
     return bookings
       .filter((b) => (onlyUpcoming ? new Date(`${b.date}T${b.time}`) >= now : true))
-      .filter((b) => [b.customer, b.email, b.phone, b.vehicle, b.street, b.suburb, b.postcode].join(" ").toLowerCase().includes(q.toLowerCase()))
+      .filter((b) => [b.customer, b.email, b.phone, b.vehicle, b.suburb, b.postcode, b.street].join(" ").toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
   }, [bookings, q, onlyUpcoming]);
 
-  function togglePaid(id) {
-    setBookings((xs) => xs.map((b) => (b.id === id ? { ...b, paid: !b.paid } : b)));
-  }
+  function togglePaid(id) { setBookings((xs) => xs.map((b) => (b.id === id ? { ...b, paid: !b.paid } : b))); }
+  function remove(id) { if (!confirm("Delete this booking?")) return; setBookings((xs) => xs.filter((b) => b.id !== id)); }
 
-  function remove(id) {
-    if (!confirm("Delete this booking?")) return;
-    setBookings((xs) => xs.filter((b) => b.id !== id));
+  function download(filename, text) {
+    const el = document.createElement("a");
+    el.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(text));
+    el.setAttribute("download", filename);
+    el.style.display = "none";
+    document.body.appendChild(el); el.click(); document.body.removeChild(el);
   }
 
   function exportCSV() {
-    const headers = [
-      "createdAt","date","time","customer","email","phone","vehicle","size","service","addons","locationType","mobileZone","street","suburb","postcode","notes","paid","travelFee","total"
-    ];
+    const headers = ["createdAt","date","time","customer","email","phone","vehicle","size","service","addons","locationType","suburb","postcode","street","notes","paid","travelFee","total"];
     const rows = bookings.map((b) => [
       b.createdAt,b.date,b.time,b.customer,b.email,b.phone,b.vehicle,b.size,
       SERVICES.find((s)=>s.id===b.serviceId)?.name,
       b.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join("; "),
-      b.locationType, b.mobileZone || "", b.street || "", b.suburb || "", b.postcode || "",
-      (b.notes||"").replaceAll("\n"," "),
-      b.paid?"yes":"no",
-      b.travelFee ?? 0,
-      b.total
+      b.locationType,b.suburb||"",b.postcode||"",b.street||"",
+      (b.notes||"").replaceAll("\n"," "), b.paid?"yes":"no", b.travelFee??0, b.total
     ]);
     const csv = [headers.join(","), ...rows.map((r)=>r.map((v)=>`"${String(v??"").replaceAll('"','""')}"`).join(","))].join("\n");
     download(`bookings-${todayISO()}.csv`, csv);
   }
 
-  if (!admin) {
-    return (
-      <Card>
-        <div className="text-sm text-neutral-300">Admin access required. Enter the PIN in the header.</div>
-      </Card>
-    );
-  }
+  if (!admin) return <Card><div className="text-sm text-neutral-300">Admin access required. Enter the PIN in the header.</div></Card>;
 
   return (
     <section className="space-y-4">
@@ -760,44 +591,25 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
         <div className="flex flex-col md:flex-row gap-3 md:items-center justify-between">
           <div className="flex gap-2 items-center">
             <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search name, email, phone, vehicle, or address" className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 w-72" />
-            <label className="text-sm flex items-center gap-2">
-              <input type="checkbox" checked={onlyUpcoming} onChange={(e)=>setOnlyUpcoming(e.target.checked)} />
-              Upcoming only
-            </label>
+            <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={onlyUpcoming} onChange={(e)=>setOnlyUpcoming(e.target.checked)} />Upcoming only</label>
           </div>
           <div className="text-sm text-neutral-400">Total bookings: {bookings.length}</div>
         </div>
       </Card>
 
       <div className="grid gap-3">
-        {filtered.length === 0 && (
-          <Card>
-            <div className="text-neutral-400 text-sm">No bookings found.</div>
-          </Card>
-        )}
+        {filtered.length === 0 && (<Card><div className="text-neutral-400 text-sm">No bookings found.</div></Card>)}
         {filtered.map((b) => (
           <Card key={b.id} className="grid md:grid-cols-[1fr_auto] gap-4 items-start">
             <div className="text-sm grid grid-cols-2 md:grid-cols-3 gap-y-1 gap-x-6">
-              <div className="text-neutral-400">When</div>
-              <div>{b.date} {b.time}</div>
-              <div className="text-neutral-400">Customer</div>
-              <div>{b.customer} • {b.phone}</div>
-              <div className="text-neutral-400">Email</div>
-              <div>{b.email}</div>
-              <div className="text-neutral-400">Vehicle</div>
-              <div>{b.vehicle} ({b.size.toUpperCase()})</div>
-              <div className="text-neutral-400">Service</div>
-              <div>{SERVICES.find((s)=>s.id===b.serviceId)?.name}</div>
-              <div className="text-neutral-400">Location</div>
-              <div>
-                {b.locationType === "mobile"
-                  ? `Home • Zone ${b.mobileZone} — ${b.street}, ${b.suburb} ${b.postcode}`
-                  : "Studio"}
-              </div>
-              <div className="text-neutral-400">Enhancements</div>
-              <div>{b.addons.length? b.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join(", ") : "None"}</div>
-              <div className="text-neutral-400">Total</div>
-              <div>{currency(b.total)}</div>
+              <div className="text-neutral-400">When</div><div>{b.date} {b.time}</div>
+              <div className="text-neutral-400">Customer</div><div>{b.customer} • {b.phone}</div>
+              <div className="text-neutral-400">Email</div><div>{b.email}</div>
+              <div className="text-neutral-400">Vehicle</div><div>{b.vehicle} ({b.size.toUpperCase()})</div>
+              <div className="text-neutral-400">Service</div><div>{SERVICES.find((s)=>s.id===b.serviceId)?.name}</div>
+              <div className="text-neutral-400">Location</div><div>{b.locationType === "mobile" ? `Home • ${b.suburb}${b.postcode?` ${b.postcode}`:""} — ${b.street}` : "Studio"}</div>
+              <div className="text-neutral-400">Enhancements</div><div>{b.addons.length? b.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join(", ") : "None"}</div>
+              <div className="text-neutral-400">Total</div><div>{currency(b.total)}</div>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>togglePaid(b.id)} className={classNames("px-4 py-2 rounded-xl border", b.paid?"border-emerald-600 bg-emerald-600/20":"border-neutral-700 hover:bg-neutral-900")}>{b.paid?"Paid":"Mark Paid"}</button>
@@ -814,19 +626,9 @@ function Footer() {
   return (
     <footer className="mt-16 border-t border-neutral-900">
       <div className="max-w-6xl mx-auto px-4 py-10 grid md:grid-cols-3 gap-6 text-sm">
-        <div>
-          <div className="font-semibold">{BRAND.name}</div>
-          <div className="text-neutral-400">{BRAND.tagline}</div>
-        </div>
-        <div className="text-neutral-400">
-          <div>{BRAND.phone}</div>
-          <div>{BRAND.email}</div>
-          <div>{BRAND.address}</div>
-        </div>
-        <div className="text-neutral-400">
-          <div>ABN 00 000 000 000</div>
-          <div>© {new Date().getFullYear()} {BRAND.name}. All rights reserved.</div>
-        </div>
+        <div><div className="font-semibold">{BRAND.name}</div><div className="text-neutral-400">{BRAND.tagline}</div></div>
+        <div className="text-neutral-400"><div>{BRAND.phone}</div><div>{BRAND.email}</div><div>{BRAND.address}</div></div>
+        <div className="text-neutral-400"><div>ABN 00 000 000 000</div><div>© {new Date().getFullYear()} {BRAND.name}. All rights reserved.</div></div>
       </div>
     </footer>
   );
