@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * Luxury Car Detailing – Single-File React App
+ * Luxury Car Detailing – Single-File React App (Home Service Enabled)
  * -------------------------------------------------
  * ✅ Elegant, interactive, mobile-first
  * ✅ Services with live price calculator
@@ -9,11 +9,7 @@ import React, { useEffect, useMemo, useState } from "react";
  * ✅ LocalStorage persistence
  * ✅ Admin mini-dashboard (view, filter, export CSV, mark paid)
  * ✅ Print-friendly invoice/confirmation
- *
- * Notes
- * - This is a single-file MVP meant to be dropped into any React/Tailwind setup.
- * - No backend; bookings are stored in localStorage (replace later with an API).
- * - Admin access uses a demo PIN: 2468 (change in ADMIN_PIN).
+ * ✅ Home Service: address, travel zones, travel fee
  */
 
 // ---- Config ---------------------------------------------------------------
@@ -56,6 +52,13 @@ const ADDONS = [
   { id: "engine", name: "Engine Bay Detail", price: 60 },
   { id: "headlights", name: "Headlight Restoration", price: 80 },
   { id: "interior", name: "Leather Clean & Protect", price: 70 },
+];
+
+// Home service travel zones
+const MOBILE_ZONES = [
+  { id: "A", label: "Zone A – within ~20km", fee: 25 },
+  { id: "B", label: "Zone B – 20–35km", fee: 45 },
+  { id: "C", label: "Zone C – 35–50km", fee: 65 },
 ];
 
 const SLOTS_PER_DAY = 6; // simplistic capacity model
@@ -367,6 +370,13 @@ function BookingFlow({ bookings, setBookings }) {
     size: "medium",
     serviceId: SERVICES[1].id,
     addons: [],
+    // Location
+    locationType: "studio", // "studio" | "mobile"
+    mobileZone: "A",
+    street: "",
+    suburb: "",
+    postcode: "",
+    // Schedule
     date: todayISO(),
     time: "09:00",
     notes: "",
@@ -380,7 +390,8 @@ function BookingFlow({ bookings, setBookings }) {
 
   const basePrice = selectedService?.priceBySize?.[form.size] ?? 0;
   const addonsTotal = form.addons.map((id) => ADDONS.find((a) => a.id === id)?.price || 0).reduce((a, b) => a + b, 0);
-  const total = basePrice + addonsTotal;
+  const travelFee = form.locationType === "mobile" ? (MOBILE_ZONES.find(z => z.id === form.mobileZone)?.fee || 0) : 0;
+  const total = basePrice + addonsTotal + travelFee;
 
   const dayBookings = bookings.filter((b) => b.date === form.date);
   const takenTimes = new Set(dayBookings.map((b) => b.time));
@@ -415,6 +426,13 @@ function BookingFlow({ bookings, setBookings }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) errs.push("A valid email is required.");
     if (!/^[- +()0-9]{8,}$/.test(form.phone)) errs.push("A valid phone number is required.");
     if (!form.vehicle.trim()) errs.push("Vehicle make/model is required.");
+
+    if (form.locationType === "mobile") {
+      if (!form.street.trim()) errs.push("Street address is required for home service.");
+      if (!form.suburb.trim()) errs.push("Suburb is required for home service.");
+      if (!/^\d{4}$/.test(form.postcode)) errs.push("A 4-digit postcode is required for home service.");
+    }
+
     if (capacityReached) errs.push("No availability on this day. Please pick another date.");
     if (takenTimes.has(form.time)) errs.push("Selected time is already booked.");
     return errs;
@@ -424,7 +442,7 @@ function BookingFlow({ bookings, setBookings }) {
     const errs = validate();
     if (errs.length) return alert(errs.join("\n"));
 
-    const booking = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...form, total };
+    const booking = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...form, total, travelFee };
     setBookings((xs) => [...xs, booking]);
     setStep(3);
   }
@@ -435,7 +453,7 @@ function BookingFlow({ bookings, setBookings }) {
 
   return (
     <section className="space-y-6">
-      <SectionTitle eyebrow="Book Now" title="Reserve your detail in under a minute" subtitle="Pick a service, choose a time, and we’ll confirm instantly." />
+      <SectionTitle eyebrow="Book Now" title="Reserve your detail in under a minute" subtitle="Pick a service, choose a time, home or studio, and we’ll confirm instantly." />
 
       {/* Stepper */}
       <div className="flex items-center gap-3 text-sm">
@@ -492,6 +510,36 @@ function BookingFlow({ bookings, setBookings }) {
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Location selector */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <div className="text-sm font-medium mb-2 text-amber-100">Service location</div>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="loc" checked={form.locationType==="studio"} onChange={()=>update("locationType","studio")} />
+                  Studio (at our place)
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="loc" checked={form.locationType==="mobile"} onChange={()=>update("locationType","mobile")} />
+                  Home service (we come to you)
+                </label>
+              </div>
+              {form.locationType === "mobile" && (
+                <div className="mt-3 p-4 rounded-xl bg-neutral-900 border border-neutral-800 grid gap-3">
+                  <select value={form.mobileZone} onChange={(e)=>update("mobileZone", e.target.value)} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3">
+                    {MOBILE_ZONES.map(z=> <option key={z.id} value={z.id}>{z.label} (+{currency(z.fee)})</option>)}
+                  </select>
+                  <input value={form.street} onChange={(e)=>update("street", e.target.value)} placeholder="Street address" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <input value={form.suburb} onChange={(e)=>update("suburb", e.target.value)} placeholder="Suburb" className="col-span-2 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
+                    <input value={form.postcode} onChange={(e)=>update("postcode", e.target.value)} placeholder="Postcode" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3" />
+                  </div>
+                  <div className="text-xs text-neutral-400">Zones are rough travel distances. For areas beyond Zone C (~50km), contact us for a custom quote.</div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -554,7 +602,7 @@ function BookingFlow({ bookings, setBookings }) {
           <div className="text-xl font-semibold text-amber-100">You’re booked ✨</div>
           <p className="text-neutral-300">We’ve saved your reservation. A confirmation will be sent to your email and phone (demo).</p>
           <div className="grid md:grid-cols-2 gap-4">
-            <SummaryCard form={form} total={total} />
+            <SummaryCard form={form} total={total} travelFee={travelFee} />
             <Card className="bg-neutral-950/60">
               <div className="text-sm font-medium text-amber-100 mb-2">What happens next</div>
               <ul className="text-sm text-neutral-300 list-disc pl-5 space-y-1">
@@ -573,7 +621,7 @@ function BookingFlow({ bookings, setBookings }) {
   );
 }
 
-function SummaryCard({ form, total }) {
+function SummaryCard({ form, total, travelFee }) {
   const svc = SERVICES.find((s) => s.id === form.serviceId);
   return (
     <Card>
@@ -585,13 +633,34 @@ function SummaryCard({ form, total }) {
         <div className="text-neutral-400">Service</div><div>{svc?.name}</div>
         <div className="text-neutral-400">Vehicle</div><div>{form.vehicle}</div>
         <div className="text-neutral-400">Size</div><div className="uppercase">{form.size}</div>
+        <div className="text-neutral-400">Location</div>
+        <div>
+          {form.locationType === "studio"
+            ? "Studio"
+            : `Home service • ${MOBILE_ZONES.find((z) => z.id === form.mobileZone)?.label}`}
+        </div>
+        {form.locationType === "mobile" && (
+          <>
+            <div className="text-neutral-400">Address</div>
+            <div>{form.street}, {form.suburb} {form.postcode}</div>
+          </>
+        )}
         <div className="text-neutral-400">Date</div><div>{toISODate(form.date)}</div>
         <div className="text-neutral-400">Time</div><div>{form.time}</div>
-        <div className="text-neutral-400">Enhancements</div><div>{form.addons.length ? form.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join(", ") : "None"}</div>
+        <div className="text-neutral-400">Enhancements</div>
+        <div>{form.addons.length ? form.addons.map((id) => ADDONS.find((a) => a.id === id)?.name).join(", ") : "None"}</div>
       </div>
-      <div className="mt-4 flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 p-3">
-        <div className="text-sm text-neutral-300">Total</div>
-        <div className="text-lg font-semibold text-amber-300">{currency(total)}</div>
+      <div className="mt-4 grid gap-2">
+        {form.locationType === "mobile" && (
+          <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+            <div className="text-sm text-neutral-300">Travel fee</div>
+            <div className="text-base font-semibold text-amber-300">{currency(travelFee)}</div>
+          </div>
+        )}
+        <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+          <div className="text-sm text-neutral-300">Total</div>
+          <div className="text-lg font-semibold text-amber-300">{currency(total)}</div>
+        </div>
       </div>
     </Card>
   );
@@ -638,7 +707,7 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
     const now = new Date();
     return bookings
       .filter((b) => (onlyUpcoming ? new Date(`${b.date}T${b.time}`) >= now : true))
-      .filter((b) => [b.customer, b.email, b.phone, b.vehicle].join(" ").toLowerCase().includes(q.toLowerCase()))
+      .filter((b) => [b.customer, b.email, b.phone, b.vehicle, b.street, b.suburb, b.postcode].join(" ").toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
   }, [bookings, q, onlyUpcoming]);
 
@@ -653,14 +722,16 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
 
   function exportCSV() {
     const headers = [
-      "createdAt","date","time","customer","email","phone","vehicle","size","service","addons","notes","paid","total"
+      "createdAt","date","time","customer","email","phone","vehicle","size","service","addons","locationType","mobileZone","street","suburb","postcode","notes","paid","travelFee","total"
     ];
     const rows = bookings.map((b) => [
       b.createdAt,b.date,b.time,b.customer,b.email,b.phone,b.vehicle,b.size,
       SERVICES.find((s)=>s.id===b.serviceId)?.name,
       b.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join("; "),
+      b.locationType, b.mobileZone || "", b.street || "", b.suburb || "", b.postcode || "",
       (b.notes||"").replaceAll("\n"," "),
       b.paid?"yes":"no",
+      b.travelFee ?? 0,
       b.total
     ]);
     const csv = [headers.join(","), ...rows.map((r)=>r.map((v)=>`"${String(v??"").replaceAll('"','""')}"`).join(","))].join("\n");
@@ -688,7 +759,7 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
       <Card>
         <div className="flex flex-col md:flex-row gap-3 md:items-center justify-between">
           <div className="flex gap-2 items-center">
-            <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search name, email, phone, vehicle" className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 w-72" />
+            <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search name, email, phone, vehicle, or address" className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 w-72" />
             <label className="text-sm flex items-center gap-2">
               <input type="checkbox" checked={onlyUpcoming} onChange={(e)=>setOnlyUpcoming(e.target.checked)} />
               Upcoming only
@@ -717,6 +788,12 @@ function AdminDashboard({ admin, setAdmin, bookings, setBookings }) {
               <div>{b.vehicle} ({b.size.toUpperCase()})</div>
               <div className="text-neutral-400">Service</div>
               <div>{SERVICES.find((s)=>s.id===b.serviceId)?.name}</div>
+              <div className="text-neutral-400">Location</div>
+              <div>
+                {b.locationType === "mobile"
+                  ? `Home • Zone ${b.mobileZone} — ${b.street}, ${b.suburb} ${b.postcode}`
+                  : "Studio"}
+              </div>
               <div className="text-neutral-400">Enhancements</div>
               <div>{b.addons.length? b.addons.map((id)=>ADDONS.find(a=>a.id===id)?.name).join(", ") : "None"}</div>
               <div className="text-neutral-400">Total</div>
